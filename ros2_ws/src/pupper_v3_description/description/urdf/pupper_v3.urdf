@@ -98,7 +98,7 @@
     <visual name="body">
       <origin rpy="-1.57080 -0.00000 1.57080" xyz="0.00000 0.00000 0.00000"/>
       <geometry>
-        <mesh filename="../meshes/stl/Body V4 v70.001.stl" scale="1.00000 1.00000 1.00000"/>
+        <mesh filename="../meshes/stl/BodyV4v70_001.stl" scale="1.00000 1.00000 1.00000"/>
       </geometry>
     </visual>
   </link>
@@ -111,7 +111,7 @@
     <visual name="Leg Assembly For Flanged v26.012">
       <origin rpy="0.00000 0.00000 3.14159" xyz="0.00000 0.00000 -0.02800"/>
       <geometry>
-        <mesh filename="../meshes/stl/Leg Assembly For Flanged v26.013.stl" scale="-1.00000 -1.00000 -1.00000"/>
+        <mesh filename="../meshes/stl/LegAssemblyForFlangedv26_013.stl" scale="-1.00000 -1.00000 -1.00000"/>
       </geometry>
     </visual>
   </link>
@@ -130,7 +130,7 @@
     <visual name="Leg Assembly For Flanged v26.013">
       <origin rpy="0.26213 -1.57080 2.87947" xyz="-0.02800 -0.00000 -0.00000"/>
       <geometry>
-        <mesh filename="../meshes/stl/Leg Assembly For Flanged v26.014.stl" scale="-1.00000 -1.00000 -1.00000"/>
+        <mesh filename="../meshes/stl/LegAssemblyForFlangedv26_014.stl" scale="-1.00000 -1.00000 -1.00000"/>
       </geometry>
     </visual>
   </link>
@@ -149,7 +149,7 @@
     <visual name="Leg Assembly For Flanged v26.014">
       <origin rpy="-0.00000 0.00000 3.14159" xyz="0.06850 0.04940 -0.02800"/>
       <geometry>
-        <mesh filename="../meshes/stl/Leg Assembly For Flanged v26.015.stl" scale="-1.00000 -1.00000 -1.00000"/>
+        <mesh filename="../meshes/stl/LegAssemblyForFlangedv26_015.stl" scale="-1.00000 -1.00000 -1.00000"/>
       </geometry>
     </visual>
   </link>
@@ -162,7 +162,7 @@
     <visual name="Leg Assembly For Flanged v26.004">
       <origin rpy="0.00000 0.00000 3.14159" xyz="0.00000 0.00000 -0.02800"/>
       <geometry>
-        <mesh filename="../meshes/stl/Leg Assembly For Flanged v26.005.stl" scale="1.00000 1.00000 1.00000"/>
+        <mesh filename="../meshes/stl/LegAssemblyForFlangedv26_005.stl" scale="1.00000 1.00000 1.00000"/>
       </geometry>
     </visual>
   </link>
@@ -181,7 +181,7 @@
     <visual name="Leg Assembly For Flanged v26.005">
       <origin rpy="0.26213 -1.57080 2.87947" xyz="-0.02800 -0.00000 -0.00000"/>
       <geometry>
-        <mesh filename="../meshes/stl/Leg Assembly For Flanged v26.006.stl" scale="1.00000 1.00000 1.00000"/>
+        <mesh filename="../meshes/stl/LegAssemblyForFlangedv26_006.stl" scale="1.00000 1.00000 1.00000"/>
       </geometry>
     </visual>
   </link>
@@ -200,7 +200,7 @@
     <visual name="Leg Assembly For Flanged v26.006">
       <origin rpy="-0.00000 0.00000 3.14159" xyz="0.06850 0.04940 -0.02800"/>
       <geometry>
-        <mesh filename="../meshes/stl/Leg Assembly For Flanged v26.007.stl" scale="1.00000 1.00000 1.00000"/>
+        <mesh filename="../meshes/stl/LegAssemblyForFlangedv26_007.stl" scale="1.00000 1.00000 1.00000"/>
       </geometry>
     </visual>
   </link>
@@ -213,7 +213,7 @@
     <visual name="Leg Assembly For Flanged v26.009">
       <origin rpy="0.00000 0.00000 3.14159" xyz="0.00000 0.00000 -0.02800"/>
       <geometry>
-        <mesh filename="../meshes/stl/Leg Assembly For Flanged v26.010.stl" scale="-1.00000 -1.00000 -1.00000"/>
+        <mesh filename="../meshes/stl/LegAssemblyForFlangedv26_010.stl" scale="-1.00000 -1.00000 -1.00000"/>
       </geometry>
     </visual>
   </link>
@@ -232,7 +232,7 @@
     <visual name="Leg Assembly For Flanged v26.010">
       <origin rpy="0.26213 -1.57080 2.87947" xyz="-0.02800 -0.00000 -0.00000"/>
       <geometry>
-        <mesh filename="../meshes/stl/Leg Assembly For Flanged v26.011.stl" scale="-1.00000 -1.00000 -1.00000"/>
+        <mesh filename="../meshes/stl/LegAssemblyForFlangedv26_011.stl" scale="-1.00000 -1.00000 -1.00000"/>
       </geometry>
     </visual>
   </link>
@@ -251,7 +251,7 @@
     <visual name="Leg Assembly For Flanged v26.011">
       <origin rpy="-0.00000 0.00000 3.14159" xyz="0.06850 0.04940 -0.02800"/>
       <geometry>
-        <mesh filename="../meshes/stl/Leg Assembly For Flanged v26.012.stl" scale="-1.00000 -1.00000 -1.00000"/>
+        <mesh filename="../meshes/stl/LegAssemblyForFlangedv26_012.stl" scale="-1.00000 -1.00000 -1.00000"/>
       </geometry>
     </visual>
   </link>
@@ -264,7 +264,7 @@
     <visual name="Leg Assembly For Flanged v26.001">
       <origin rpy="0.00000 0.00000 3.14159" xyz="0.00000 0.00000 -0.02800"/>
       <geometry>
-        <mesh filename="../meshes/stl/Leg Assembly For Flanged v26.001.stl" scale="1.00000 1.00000 1.00000"/>
+        <mesh filename="../meshes/stl/LegAssemblyForFlangedv26_001.stl" scale="1.00000 1.00000 1.00000"/>
       </geometry>
     </visual>
   </link>
@@ -283,7 +283,7 @@
     <visual name="Leg Assembly For Flanged v26.002">
       <origin rpy="0.26213 -1.57080 2.87947" xyz="-0.02800 -0.00000 -0.00000"/>
       <geometry>
-        <mesh filename="../meshes/stl/Leg Assembly For Flanged v26.002.stl" scale="1.00000 1.00000 1.00000"/>
+        <mesh filename="../meshes/stl/LegAssemblyForFlangedv26_002.stl" scale="1.00000 1.00000 1.00000"/>
       </geometry>
     </visual>
   </link>
@@ -302,7 +302,7 @@
     <visual name="Leg Assembly For Flanged v26.003">
       <origin rpy="-0.00000 0.00000 3.14159" xyz="0.06850 0.04940 -0.02800"/>
       <geometry>
-        <mesh filename="../meshes/stl/Leg Assembly For Flanged v26.003.stl" scale="1.00000 1.00000 1.00000"/>
+        <mesh filename="../meshes/stl/LegAssemblyForFlangedv26_003.stl" scale="1.00000 1.00000 1.00000"/>
       </geometry>
     </visual>
   </link>
