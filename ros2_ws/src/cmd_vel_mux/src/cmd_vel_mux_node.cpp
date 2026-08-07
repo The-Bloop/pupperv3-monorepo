@@ -94,8 +94,13 @@ private:
         source.cmd_vel = *msg;
         source.received = true;
 
-        // Special handling for joystick/teleop input - requires deadband
-        bool is_joystick = (topic == "/teleop_cmd_vel" || topic == "/joystick_cmd_vel");
+        // Special handling for joystick/teleop input - requires deadband.
+        // /keyboard_cmd_vel is included: teleop_twist_keyboard republishes its last velocity
+        // continuously (holds speed until you press k/space), so without deadband gating it
+        // would hold this slot forever and starve the lower-priority autonomy inputs. Gated,
+        // it only claims priority while actually commanding motion; k/space (zeros) releases.
+        bool is_joystick = (topic == "/teleop_cmd_vel" || topic == "/joystick_cmd_vel" ||
+                            topic == "/keyboard_cmd_vel");
 
         if (is_joystick)
         {

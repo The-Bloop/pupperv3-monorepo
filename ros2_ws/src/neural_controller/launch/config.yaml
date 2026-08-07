@@ -175,6 +175,14 @@ cmd_vel_mux:
   ros__parameters:
     deadband: 0.05
     joystick_timeout_ms: 500
+    # Priority order, highest first (index = priority). Both manual inputs (joystick,
+    # keyboard) sit above autonomy and are deadband-gated in the node, so idle manual
+    # teleop does not starve /llm_cmd_vel or /person_following_cmd_vel.
+    inputs:
+      - /teleop_cmd_vel
+      - /keyboard_cmd_vel
+      - /llm_cmd_vel
+      - /person_following_cmd_vel
 
 joy_util_node:
   ros__parameters:
