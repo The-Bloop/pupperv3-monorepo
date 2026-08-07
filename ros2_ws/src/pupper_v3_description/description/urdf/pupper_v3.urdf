@@ -136,7 +136,7 @@
   </link>
   <link name="leg_back_l_3">
     <collision name="Leg Assembly For Flanged v26.016">
-      <origin rpy="-0.00000 0.00000 3.14159" xyz="0.06231 -0.06216 0.01800"/>
+      <origin rpy="-0.00000 0.00000 3.14159" xyz="0.06231 0.06216 0.01800"/>
       <geometry>
         <sphere radius="0.01995"/>
       </geometry>
@@ -238,7 +238,7 @@
   </link>
   <link name="leg_front_l_3">
     <collision name="Leg Assembly For Flanged v26.015">
-      <origin rpy="-0.00000 0.00000 3.14159" xyz="0.06231 -0.06216 0.01800"/>
+      <origin rpy="-0.00000 0.00000 3.14159" xyz="0.06231 0.06216 0.01800"/>
       <geometry>
         <sphere radius="0.01995"/>
       </geometry>

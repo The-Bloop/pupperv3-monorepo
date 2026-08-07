@@ -3,6 +3,11 @@ ros2_ws/build/
 ros2_ws/log/
 ros2_ws/install/
 
+# Jazzy build from the pupper-jazzy distrobox. Separate bases because the container
+# shares this directory with the host, whose Humble build owns build/ and install/.
+ros2_ws/build_jazzy/
+ros2_ws/install_jazzy/
+
 *.DS_Store
 *.pem
 *.pyc
@@ -10,3 +15,6 @@ ros2_ws/install/
 untracked_bags
 
 *.wav
+
+# Cross-check output of isaac_sim/convert_urdf_to_usd.py; the committed USD is GUI-authored
+pupper_v3_isaac_generated/

@@ -1,0 +1,199 @@
+# Isaac Lab configuration for the Pupper V3 quadruped.
+#
+# Single source of truth for the numbers. Consumed by pupper_v3_isaac_cfg.py,
+# NOT by Hydra -- there is deliberately no `# @package` header, since nothing here
+# is composed by Hydra's defaults mechanism.
+#
+# Provenance of every value is noted inline. Where sim and hardware disagree, sim wins
+# here and the hardware value is recorded as a comment.
+
+asset:
+  # Relative to the isaac_sim/ directory (this YAML's parent's parent).
+  usd_path: "pupper_v3_isaac/pupper_v3_isaac.usd"
+
+  # >>> THE DOUBLE base_link NESTING -- read before writing any sensor prim path. <<<
+  # The GUI-authored USD wraps every link under an EXTRA base_link Xform:
+  #
+  #   /pupper_v3                        <- defaultPrim
+  #     /base_link                      <- plain Xform wrapper, NO physics APIs
+  #       /base_link                    <- RigidBodyAPI + ArticulationRootAPI (the real body)
+  #       /leg_front_r_1 ... leg_back_l_3   <- the 12 leg rigid bodies
+  #       /joints [Scope]               <- the 12 PhysicsRevoluteJoints
+  #
+  # So for a robot spawned at <prim>, the rigid bodies live at <prim>/base_link/<body>,
+  # NOT at <prim>/<body>. Pointing a sensor at <prim>/base_link gets you the wrapper and
+  # fails with "Failed to find a rigid body ancestor prim at path expression".
+  # body_root is that wrapper level; the loader inserts it into every sensor prim path.
+  body_root: "base_link"
+  # REQUIRED for the foot ContactSensors. Without it PhysX reports no contacts at all,
+  # and the failure looks identical to missing collision geometry.
+  activate_contact_sensors: true
+  # Matches USD physxArticulation:enabledSelfCollisions = 0 and
+  # convert_urdf_to_usd.py self_collision = False.
+  enabled_self_collisions: false
+  # Match the committed USD.
+  solver_position_iteration_count: 32
+  solver_velocity_iteration_count: 1
+
+  # >>> LOAD-BEARING. Do not remove. <<<
+  # The committed USD ships every joint with `drive:angular:physics:type = acceleration`.
+  # Under an ACCELERATION drive PhysX scales stiffness by the joint's equivalent inertia,
+  # which for these joints is tiny:
+  #     leg_*_1 JointEquivalentInertia = 0.00726
+  #     leg_*_2                        = 0.00114
+  #     leg_*_3 (knee)                 = 0.000194
+  # So stiffness 5.0 yields ~5 * err * 0.000194 = ~0.001 Nm at the knee -- about 5000x too
+  # weak. The robot then sags until the knees hit their joint limits and sit there, and
+  # raising kp does NOT help (kp=200 with a 1000 Nm limit still collapses). Verified.
+  #
+  # Isaac Lab's ImplicitActuatorCfg writes stiffness/damping but does NOT change drive
+  # type, so this must be forced at spawn. With "force", the gains below mean Nm/rad and
+  # the robot stands (measured: base settles ~0.154, a ~0.7 cm PD droop off the 0.16139
+  # ideal, knees ~7.5 deg off target -- exactly the expected steady-state error for kp=5).
+  drive_type: "force"
+
+init_state:
+  # MEASURED in Isaac, not derived: at default_joint_pos the four foot spheres are exactly
+  # coplanar (spread 0.00000) and their contact points sit 0.16139 below base_link.
+  # So base z = 0.16139 is the exact standing height; 0.17 leaves ~0.9 cm of drop-in
+  # clearance.
+  #
+  # NOTE the sim state does NOT start from these joint values by itself. init_state.joint_pos
+  # only populates data.default_joint_pos; the articulation starts from the USD (all joints
+  # at 0) until you call write_joint_state_to_sim. Skipping that spawns the robot splayed:
+  #
+  #   robot.write_joint_state_to_sim(robot.data.default_joint_pos.clone(),
+  #                                  robot.data.default_joint_vel.clone())
+  pos: [0.0, 0.0, 0.17]
+  rot: [1.0, 0.0, 0.0, 0.0]   # (w, x, y, z)
+
+# Canonical joint order: front_r -> front_l -> back_r -> back_l.
+# Identical in ai/rl/conf/training/default.yaml, neural_controller/launch/config.yaml
+# (joint_names), and components.xacro declaration order.
+# _1 = abduction, _2 = hip/thigh, _3 = knee.
+#
+# This is NOT needed to build the ArticulationCfg -- Isaac resolves joint order from the
+# USD, which is ALPHABETICAL (leg_back_l_1 first). It is here because any code bridging to
+# the trained policy must reindex from Isaac's order into this one. The policy's
+# observation and action vectors are index-based, so getting this wrong scrambles the
+# robot silently rather than raising.
+joint_order:
+  - leg_front_r_1
+  - leg_front_r_2
+  - leg_front_r_3
+  - leg_front_l_1
+  - leg_front_l_2
+  - leg_front_l_3
+  - leg_back_r_1
+  - leg_back_r_2
+  - leg_back_r_3
+  - leg_back_l_1
+  - leg_back_l_2
+  - leg_back_l_3
+
+# Source: ai/rl/conf/training/default.yaml default_pose
+#         == neural_controller/launch/config.yaml default_joint_pos (identical).
+default_joint_pos:
+  leg_front_r_1: 0.26
+  leg_front_r_2: 0.0
+  leg_front_r_3: -0.52
+  leg_front_l_1: -0.26
+  leg_front_l_2: 0.0
+  leg_front_l_3: 0.52
+  leg_back_r_1: 0.26
+  leg_back_r_2: 0.0
+  leg_back_r_3: -0.52
+  leg_back_l_1: -0.26
+  leg_back_l_2: 0.0
+  leg_back_l_3: 0.52
+
+actuator:
+  # One group: all 12 joints are the same motor.
+  joint_names_expr: ["leg_.*"]
+
+  # --- GAINS: training values are the default, since sim is the consumer here ---
+  # Source: ai/rl/conf/training/default.yaml position_control_kp
+  stiffness: 5.0     # kp [N*m/rad]
+  # Source: ai/rl/conf/training/default.yaml dof_damping
+  damping: 0.25      # kd [N*m*s/rad]
+  #
+  # Sim-to-real slack -- the deployed controller runs a STIFFER kp:
+  #   neural_controller/launch/config.yaml  init_kps: [7.5] * 12   <- deploy kp
+  #   neural_controller/launch/config.yaml  init_kds: [0.25] * 12  <- deploy kd (same)
+  #
+  # kp 5.0 (train) vs 7.5 (deploy) is 1.5x. The policy is meant to absorb this via domain
+  # randomization on kp:
+  #   ai/rl/conf/training/default.yaml  position_control_kp_multiplier_range: [0.6, 1.1]
+  #   ai/rl/conf/training/default.yaml  position_control_kd_multiplier_range: [0.8, 1.5]
+  # But that range only reaches 1.1x = 5.5, so the deployed stiffness of 7.5 sits OUTSIDE
+  # the trained distribution. This is pre-existing and documented here, not changed.
+  # To reproduce the hardware feel in sim, set stiffness: 7.5.
+
+  # NOTE these are the *_sim variants on purpose. ImplicitActuatorCfg's plain
+  # `effort_limit` is deprecated, and its plain `velocity_limit` is accepted but NEVER
+  # APPLIED -- Isaac Lab warns "we continue to not use it". Setting the non-sim names
+  # would silently give the robot no velocity limit at all.
+  #
+  # Source: URDF <limit effort="3.0"> on all 12 joints == components.xacro effort_max.
+  # Also matches USD drive:angular:physics:maxForce = 3.
+  effort_limit_sim: 3.0
+  # Source: components.xacro velocity_max -- the real motor limit.
+  # The URDF's velocity="100.0" is a placeholder, as is the USD's
+  # physxJoint:maxJointVelocity = 5729.58 deg/s (= 100 rad/s). 30.0 rad/s is authoritative.
+  velocity_limit_sim: 30.0
+
+  # Rotor inertia reflected through the gearbox. Source: mujoco_xml/defaults.xml
+  #   <joint armature="0.0016" .../>
+  # The MuJoCo model that training runs against has this; omitting it in Isaac makes the
+  # joints noticeably floppier than the model the policy was trained on.
+  armature: 0.0016
+  # Source: mujoco_xml/defaults.xml <joint frictionloss="0.01" .../>
+  friction: 0.01
+
+# components.xacro position_min/max sit exactly 0.10 rad inside the URDF lower/upper on
+# every joint -- that inset is the firmware's safety margin. Isaac Lab expresses this as a
+# fraction of range rather than an absolute inset. The narrowest joint range is ~3.42 rad,
+# where 0.10 rad works out to ~0.97; 0.95 is the conventional and slightly safer value.
+soft_joint_pos_limit_factor: 0.95
+
+sensors:
+  imu:
+    # Attach to the articulation root body.
+    #
+    # >>> THE IMU TRAP -- read before touching offset_rot. <<<
+    # components.xacro declares the imu_sensor with yaw=0, pitch=-2.35619 (-3*pi/4), roll=0.
+    # Those are a MOUNT-ORIENTATION CORRECTION that the ros2_control hardware interface
+    # applies to rotate the physical chip's raw readings INTO the base_link frame. They are
+    # not a URDF pose, and there is no sensor link anywhere in the description.
+    #
+    # The policy consumes the ros2_control imu_sensor state interfaces, which are ALREADY
+    # base_link-frame. Isaac's Imu on base_link with an identity offset is ALSO
+    # base_link-frame. Setting offset_rot to the mount quaternion would apply the
+    # correction a second time and silently rotate the observation by 135 degrees.
+    #
+    # For the record only, the hardware mount quaternion is
+    #   (w, x, y, z) = (0.3826834, 0.0, -0.9238795, 0.0)
+    prim_body: "base_link"
+    offset_pos: [0.0, 0.0, 0.0]
+    offset_rot: [1.0, 0.0, 0.0, 0.0]   # (w, x, y, z) identity -- see above
+    # Report proper acceleration (+9.81 z at rest), matching a physical IMU and the
+    # ros2_control linear_acceleration.* interfaces.
+    gravity_bias: [0.0, 0.0, 9.81]
+    update_period: 0.0                 # every physics step
+
+  contact:
+    # The four feet. Each leg_*_3 carries a sphere r=0.01995 collider, wired in
+    # pupper_v3_isaac_physics.usd via references=</colliders/leg_*_3>.
+    # Matches ai/rl/conf/simulation/default.yaml lower_leg_body_names.
+    body_names_expr: ["leg_.*_3"]
+    update_period: 0.0
+    history_length: 3          # > 0 so air-time bookkeeping has history
+    track_air_time: true       # gait rewards need this
+    force_threshold: 1.0       # [N] contact / air discrimination
+
+physics:
+  # Source: ai/rl/conf/simulation/default.yaml physics_dt (250 Hz)
+  dt: 0.004
+  # neural_controller/launch/config.yaml repeat_action: 10 -> policy runs at 25 Hz.
+  # Isaac Lab sets decimation on the env rather than the asset; recorded here for parity.
+  decimation: 10

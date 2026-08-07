@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>pupper_isaac_sim</name>
+  <version>0.0.0</version>
+  <description>
+    ros2_control SystemInterface backed by Isaac Sim, for cross-checking against
+    pupper_mujoco_sim. Exposes the same interfaces as the MuJoCo and real-robot plugins, so
+    neural_controller runs unchanged.
+  </description>
+  <maintainer email="ssabariis@gmail.com">the_bloop</maintainer>
+  <license>MIT</license>
+
+  <!-- For actuator_model.hpp and fixed_size_queue.hpp. Isaac must apply the SAME motor
+       model as MuJoCo or a comparison between them measures the model, not the simulators.
+       Depending on the package reuses the real headers rather than copying them. -->
+  <depend>pupper_mujoco_sim</depend>
+
+  <depend>pupper_v3_description</depend>
+  <depend>hardware_interface</depend>
+  <depend>pluginlib</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <depend>std_msgs</depend>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!--
+    Isaac Sim variant of pupper_v3_mujoco.urdf.xacro.
+
+    Uses the same pupper_v3.edited.fixed.urdf kinematics as the MuJoCo and real-robot
+    variants; only the ros2_control block differs. That is deliberate: the point of the Isaac
+    setup is to cross-check against MuJoCo, so the two must not diverge on kinematics.
+
+    Note this URDF describes the robot to ros2_control and robot_state_publisher. Isaac
+    itself loads its own USD (description/isaac_sim/pupper_v3_isaac/pupper_v3_isaac.usd)
+    inside isaac_bridge.py; the two are kept consistent by convert_urdf_to_usd.py.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="pupper_v3">
+
+    <xacro:include filename="$(find pupper_v3_description)/description/urdf/pupper_v3.edited.fixed.urdf" />
+
+    <xacro:include
+        filename="$(find pupper_v3_description)/description/pupper_v3_isaac.ros2_control.xacro" />
+
+    <pupper_v3 />
+
+    <xacro:pupper_v3_system />
+
+</robot>

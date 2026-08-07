@@ -1,0 +1,11 @@
+<library path="isaac_hardware_interface">
+
+    <class name="isaac_hardware_interface/IsaacHardwareInterface"
+        type="isaac_hardware_interface::IsaacHardwareInterface"
+        base_class_type="hardware_interface::SystemInterface">
+        <description>
+            Isaac Sim hardware interface. Talks to isaac_bridge.py over ROS2 topics.
+        </description>
+    </class>
+
+</library>

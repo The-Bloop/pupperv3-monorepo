@@ -14,8 +14,10 @@
                 <param name="software_torque_limit">3.0</param>
                 <!-- <param name="use_imu">false</param> -->
 
-                <!-- uncomment this block to simulate backlash and latency -->
-                <param name="backlash">true</param>
+                <!-- backlash disabled for the Isaac cross-check: Isaac's USD has no backlash
+                     joint, so a fair standing diff needs MuJoCo slop-free too. Latency KEPT at
+                     8/10 (Isaac matches it). Flip backlash back to true to restore the default. -->
+                <param name="backlash">false</param>
                 <param name="imu_latency_timesteps">10</param>
                 <param name="command_latency_timesteps">8</param>
 
