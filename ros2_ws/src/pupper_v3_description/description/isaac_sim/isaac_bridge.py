@@ -96,7 +96,7 @@ import carb  # noqa: E402
 import numpy as np  # noqa: E402
 import omni.usd  # noqa: E402
 import yaml  # noqa: E402
-from pxr import Usd, UsdPhysics  # noqa: E402
+from pxr import PhysxSchema, Usd, UsdPhysics, UsdShade  # noqa: E402
 
 from isaacsim.core.api.world import World  # noqa: E402
 from isaacsim.core.prims import Articulation  # noqa: E402
@@ -134,25 +134,31 @@ class IsaacBridge:
         )
         # >>> LOAD-BEARING. Isaac's defaults here are a trampoline. <<<
         # add_default_ground_plane() defaults to static_friction=0.5, dynamic_friction=0.5,
-        # restitution=0.8 (scene.py:243-245). MuJoCo's collision geoms use
-        # friction="0.8 0.02 0.01" with no restitution (mujoco_xml/defaults.xml:14).
+        # restitution=0.8 (scene.py:243-245). Left at those, the robot slips (feet slide out,
+        # abduction joints walk from 1.08 to 1.61 rad while the policy commands 0.98, base sinks
+        # 0.173 -> 0.134, ~20 deg of yaw drift) and bounces (restitution 0.8 -- measured |lin_acc|
+        # swinging 1 to 40 m/s^2 on a robot that looks stationary). Both are ground-material
+        # artefacts that read as "Isaac disagrees with MuJoCo".
         #
-        # Left at Isaac's defaults, the robot slips (feet slide out, abduction joints walk
-        # from 1.08 to 1.61 rad while the policy commands 0.98, base sinks 0.173 -> 0.134,
-        # ~20 deg of yaw drift) and bounces (restitution 0.8 -- measured |lin_acc| swinging
-        # 1 to 40 m/s^2 on a robot that looks stationary). Both are pure artefacts of the
-        # ground material, and both would show up as "Isaac disagrees with MuJoCo".
-        #
-        # 0.8 matches MuJoCo's sliding friction. MuJoCo's torsional (0.02) and rolling (0.01)
-        # terms have no PhysX equivalent; that residual difference is unavoidable and belongs
-        # in any comparison write-up.
+        # TARGET = MuJoCo's *effective* foot-ground slide friction, which is 1.0, NOT 0.8:
+        # MuJoCo mixes two contacting geoms' friction by element-wise MAX (equal priority), and
+        # the floor geom (pupper_v3_complete.xml:216) carries no friction attr, so it takes
+        # MuJoCo's default 1.0. The foot collision class is 0.8 (defaults.xml:14). Contact slide
+        # = max(0.8, 1.0) = 1.0. So both Isaac surfaces get 1.0 and we force MAX combine
+        # (_match_mujoco_contact below), reproducing MuJoCo's rule and its value. restitution 0.
+        # MuJoCo's torsional (0.02) and rolling (0.01) terms have no PhysX equivalent -- that
+        # residual difference is unavoidable and belongs in any comparison write-up.
         self.world.scene.add_default_ground_plane(
-            static_friction=0.8,
-            dynamic_friction=0.8,
+            static_friction=1.0,
+            dynamic_friction=1.0,
             restitution=0.0,
         )
 
         self._load_robot()
+        # The robot's collision geoms ship no physics material -> PhysX default 0.5, and PhysX's
+        # default combine is AVERAGE, so foot(0.5)+ground(1.0) would mix to 0.75, matching
+        # neither sim. Bind 1.0/1.0/0.0 with MAX combine so the contact is a faithful 1.0.
+        self._match_mujoco_contact()
         self._neutralise_drives()
         # The IMU prim MUST exist before reset(): PhysX registers sensors at physics
         # initialisation, and one created afterwards is never registered. It fails
@@ -200,6 +206,38 @@ class IsaacBridge:
         x = UsdGeom.Xformable(stage.GetPrimAtPath(PRIM_PATH))
         x.ClearXformOpOrder()
         x.AddTranslateOp().Set(Gf.Vec3d(*CFG["init_state"]["pos"]))
+
+    def _match_mujoco_contact(self) -> None:
+        """Bind a physics material to the robot so foot-ground contact reproduces MuJoCo.
+
+        Values and rationale: see the ground-plane comment in __init__. Slide friction 1.0
+        (MuJoCo's max(foot 0.8, floor default 1.0)), restitution 0, and frictionCombineMode
+        MAX to mirror MuJoCo's element-wise-max mixing. With both surfaces at 1.0 the contact
+        is 1.0 under any combine mode; forcing MAX also makes the RULE match, not just the value.
+
+        The robot USD is instanceable, so its collision shapes are instance proxies and cannot
+        be edited in place. Bind on the editable /World/pupper root instead: UsdShade binding
+        resolution walks a proxy's namespace ancestors, so PhysX resolves this material for
+        every collision shape underneath. The material prim lives OUTSIDE the instanceable
+        subtree (/World/PhysicsMaterials) so it stays editable.
+        """
+        stage = omni.usd.get_context().get_stage()
+        material = UsdShade.Material.Define(stage, "/World/PhysicsMaterials/pupper_contact")
+        prim = material.GetPrim()
+        phys = UsdPhysics.MaterialAPI.Apply(prim)
+        phys.CreateStaticFrictionAttr().Set(1.0)
+        phys.CreateDynamicFrictionAttr().Set(1.0)
+        phys.CreateRestitutionAttr().Set(0.0)
+        px = PhysxSchema.PhysxMaterialAPI.Apply(prim)
+        px.CreateFrictionCombineModeAttr().Set("max")
+        px.CreateRestitutionCombineModeAttr().Set("min")
+
+        robot = stage.GetPrimAtPath(PRIM_PATH)
+        binding = UsdShade.MaterialBindingAPI.Apply(robot)
+        # "physics" purpose is the one PhysX reads for collision materials.
+        binding.Bind(material, UsdShade.Tokens.weakerThanDescendants, "physics")
+        carb.log_warn("[bridge] bound contact material 1.0/1.0/0.0 MAX-combine to robot "
+                      "(mimics MuJoCo effective foot-ground friction)")
 
     def _revolute_joints(self) -> dict[str, Usd.Prim]:
         """Traversal MUST include instance proxies -- this USD marks subtrees instanceable
