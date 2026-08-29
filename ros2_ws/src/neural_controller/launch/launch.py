@@ -144,6 +144,18 @@ def generate_launch_description():
         ]
     )
 
+    # use_sim_time ONLY on the isaac backend. The isaac bridge runs Isaac below realtime on this
+    # CPU, so it publishes /clock and the controller stack follows sim-time -- otherwise the
+    # wall-clock 520 Hz controller outruns the physics and the feet slip. MuJoCo is wall-clock
+    # paced at 1x realtime and publishes NO /clock, so it MUST stay on wall-clock (use_sim_time
+    # false); real hardware likewise. Gating on isaac keeps the controller_manager from blocking
+    # forever waiting for a /clock that only the bridge publishes.
+    use_sim_time = {
+        "use_sim_time": ParameterValue(
+            PythonExpression(["'", resolved_backend, "' == 'isaac'"]), value_type=bool
+        )
+    }
+
     xacro_file = PathJoinSubstitution(
         [
             FindPackageShare("pupper_v3_description"),
@@ -180,7 +192,7 @@ def generate_launch_description():
         package="robot_state_publisher",
         executable="robot_state_publisher",
         output="both",
-        parameters=[robot_description],
+        parameters=[robot_description, use_sim_time],
     )
 
     #
@@ -227,7 +239,7 @@ def generate_launch_description():
     control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
-        parameters=[node_parameters],
+        parameters=[node_parameters, use_sim_time],
         output="both",
         additional_env={"T_MONITOR": t_monitor_env},
     )

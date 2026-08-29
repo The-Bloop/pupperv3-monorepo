@@ -39,6 +39,7 @@ import argparse
 import os
 import sys
 import threading
+import time
 from pathlib import Path
 
 HERE = Path(__file__).parent.resolve()
@@ -68,8 +69,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     p.add_argument("--headless", action="store_true")
-    p.add_argument("--physics-dt", type=float, default=0.001,
-                   help="MuJoCo's deployment sim runs 1e-4 (10 kHz); report this gap with any comparison.")
+    p.add_argument("--physics-dt", type=float, default=0.0005,
+                   help=("Physics step, 2 kHz. Finer is now safe and preferred for fidelity: with "
+                         "use_sim_time the controller is paced by the bridge's /clock, so control "
+                         "and physics stay locked no matter how far below realtime the sim runs. "
+                         "Before use_sim_time, 0.0005 WORSENED slip (finer dt -> lower realtime "
+                         "factor -> the wall-clock controller outran the physics); that coupling is "
+                         "gone. Finer dt just means slower slow-motion (~0.22x wall here) and "
+                         "contact closer to MuJoCo's 1e-4/10 kHz. Do NOT coarsen to chase realtime "
+                         "-- 0.004 (250 Hz) is too coarse and breaks the get-up. Report the dt gap "
+                         "with any MuJoCo comparison."))
     p.add_argument("--rendering-dt", type=float, default=1.0 / 60.0)
     p.add_argument("--publish-every", type=int, default=1,
                    help="Publish state every N physics steps. 1 = every step.")
@@ -106,6 +115,7 @@ from actuator_model import ActuatorParams, PIDActuatorModel  # noqa: E402
 
 import rclpy  # noqa: E402
 from rclpy.executors import MultiThreadedExecutor  # noqa: E402
+from rosgraph_msgs.msg import Clock  # noqa: E402
 from std_msgs.msg import Float64MultiArray, MultiArrayDimension  # noqa: E402
 
 CFG = yaml.safe_load((HERE / "config" / "pupper_v3_isaac.yaml").read_text())
@@ -140,25 +150,34 @@ class IsaacBridge:
         # swinging 1 to 40 m/s^2 on a robot that looks stationary). Both are ground-material
         # artefacts that read as "Isaac disagrees with MuJoCo".
         #
-        # TARGET = MuJoCo's *effective* foot-ground slide friction, which is 1.0, NOT 0.8:
-        # MuJoCo mixes two contacting geoms' friction by element-wise MAX (equal priority), and
-        # the floor geom (pupper_v3_complete.xml:216) carries no friction attr, so it takes
-        # MuJoCo's default 1.0. The foot collision class is 0.8 (defaults.xml:14). Contact slide
-        # = max(0.8, 1.0) = 1.0. So both Isaac surfaces get 1.0 and we force MAX combine
-        # (_match_mujoco_contact below), reproducing MuJoCo's rule and its value. restitution 0.
-        # MuJoCo's torsional (0.02) and rolling (0.01) terms have no PhysX equivalent -- that
-        # residual difference is unavoidable and belongs in any comparison write-up.
+        # Ground 0.8, and DELIBERATELY leave the feet at PhysX's default 0.5 (no foot material).
+        # PhysX averages the two -> ~0.65 effective. This is the empirically-validated value the
+        # robot stands and gets up on (see the ops notes / snapshot_standing history).
+        #
+        # Why NOT match MuJoCo's coefficient: MuJoCo's *effective* foot-ground friction is 1.0
+        # (it mixes by element-wise MAX and the floor geom, pupper_v3_complete.xml:216, keeps
+        # MuJoCo's default 1.0 over the foot collision class's 0.8, defaults.xml:14). But matching
+        # that NUMBER in PhysX does not match the BEHAVIOUR: MuJoCo has soft/compliant contacts
+        # (solimp/solref, elliptic cone) whose feet micro-slip; PhysX has rigid Coulomb contacts.
+        # At the same coefficient PhysX grips harder, so 0.8/1.0 over-grip -- the front feet pin
+        # during the get-up sweep and the robot faceplants instead of standing (verified: 1.0
+        # jammed the front-left hip; 0.8 pinned the whole front, pitch 25 deg / roll 18 deg, never
+        # stood on its own). The shared policy was validated against MuJoCo's compliant contact,
+        # so the right target here is BEHAVIOURAL parity (~0.65), not coefficient parity. The
+        # MuJoCo<->Isaac friction gap is intentional and documented, not a bug.
+        #
+        # _match_mujoco_contact() below would bind 0.8/0.8/0.0 MAX-combine to both surfaces for
+        # strict coefficient parity. Left OFF for the reason above; re-enable only if a future
+        # contact config (softer PhysX contacts, or a policy retrained at higher friction) can
+        # tolerate the grip. restitution 0 either way (MuJoCo has none).
         self.world.scene.add_default_ground_plane(
-            static_friction=1.0,
-            dynamic_friction=1.0,
+            static_friction=0.8,
+            dynamic_friction=0.8,
             restitution=0.0,
         )
 
         self._load_robot()
-        # The robot's collision geoms ship no physics material -> PhysX default 0.5, and PhysX's
-        # default combine is AVERAGE, so foot(0.5)+ground(1.0) would mix to 0.75, matching
-        # neither sim. Bind 1.0/1.0/0.0 with MAX combine so the contact is a faithful 1.0.
-        self._match_mujoco_contact()
+        # self._match_mujoco_contact()  # OFF: over-grips the shared policy -- see comment above.
         self._neutralise_drives()
         # The IMU prim MUST exist before reset(): PhysX registers sensors at physics
         # initialisation, and one created afterwards is never registered. It fails
@@ -210,10 +229,10 @@ class IsaacBridge:
     def _match_mujoco_contact(self) -> None:
         """Bind a physics material to the robot so foot-ground contact reproduces MuJoCo.
 
-        Values and rationale: see the ground-plane comment in __init__. Slide friction 1.0
-        (MuJoCo's max(foot 0.8, floor default 1.0)), restitution 0, and frictionCombineMode
-        MAX to mirror MuJoCo's element-wise-max mixing. With both surfaces at 1.0 the contact
-        is 1.0 under any combine mode; forcing MAX also makes the RULE match, not just the value.
+        Values and rationale: see the ground-plane comment in __init__. Slide friction 0.8
+        (MuJoCo's deliberate foot collision-class value), restitution 0, and frictionCombineMode
+        MAX to mirror MuJoCo's element-wise-max mixing. With both surfaces at 0.8 the contact
+        is 0.8 under any combine mode; forcing MAX also makes the RULE match, not just the value.
 
         The robot USD is instanceable, so its collision shapes are instance proxies and cannot
         be edited in place. Bind on the editable /World/pupper root instead: UsdShade binding
@@ -225,8 +244,8 @@ class IsaacBridge:
         material = UsdShade.Material.Define(stage, "/World/PhysicsMaterials/pupper_contact")
         prim = material.GetPrim()
         phys = UsdPhysics.MaterialAPI.Apply(prim)
-        phys.CreateStaticFrictionAttr().Set(1.0)
-        phys.CreateDynamicFrictionAttr().Set(1.0)
+        phys.CreateStaticFrictionAttr().Set(0.8)
+        phys.CreateDynamicFrictionAttr().Set(0.8)
         phys.CreateRestitutionAttr().Set(0.0)
         px = PhysxSchema.PhysxMaterialAPI.Apply(prim)
         px.CreateFrictionCombineModeAttr().Set("max")
@@ -236,8 +255,8 @@ class IsaacBridge:
         binding = UsdShade.MaterialBindingAPI.Apply(robot)
         # "physics" purpose is the one PhysX reads for collision materials.
         binding.Bind(material, UsdShade.Tokens.weakerThanDescendants, "physics")
-        carb.log_warn("[bridge] bound contact material 1.0/1.0/0.0 MAX-combine to robot "
-                      "(mimics MuJoCo effective foot-ground friction)")
+        carb.log_warn("[bridge] bound contact material 0.8/0.8/0.0 MAX-combine to robot "
+                      "(mimics MuJoCo's deliberate foot-ground friction)")
 
     def _revolute_joints(self) -> dict[str, Usd.Prim]:
         """Traversal MUST include instance proxies -- this USD marks subtrees instanceable
@@ -359,6 +378,14 @@ class IsaacBridge:
         )
         self.state_pub = self.node.create_publisher(Float64MultiArray, "/isaac/joint_state", 10)
         self._state_msg = Float64MultiArray()
+        # /clock: this sim is the time authority for the controller stack (use_sim_time:=true on
+        # the isaac backend). This CPU runs Isaac below realtime, so the wall-clock 520 Hz
+        # controller would outrun the physics and the feet would slip. Driving the controller off
+        # sim-time locks control and physics to ONE clock regardless of wall-clock speed -- the
+        # robot just runs in slow motion, faithfully. Published every physics step from
+        # self._sim_time (see _on_physics_step).
+        self.clock_pub = self.node.create_publisher(Clock, "/clock", 10)
+        self._clock_msg = Clock()
         # T-Monitor applied-torque publisher (only when --t-monitor). Same topic + batched
         # layout as the MuJoCo plugin.
         self.torque_pub = (
@@ -385,7 +412,14 @@ class IsaacBridge:
             self._latest = arr
 
     def _on_physics_step(self, dt: float) -> None:
-        self._sim_time += dt  # T-Monitor sim clock, advances every physics step
+        self._sim_time += dt  # sim clock, advances every physics step (T-Monitor + /clock)
+
+        # Publish /clock first so the controller stack (use_sim_time) always has the current
+        # sim-time before it acts on the state we publish below. sec/nanosec from _sim_time.
+        sec = int(self._sim_time)
+        self._clock_msg.clock.sec = sec
+        self._clock_msg.clock.nanosec = int((self._sim_time - sec) * 1e9)
+        self.clock_pub.publish(self._clock_msg)
 
         pos_isaac = self.art.get_joint_positions()[0]
         vel_isaac = self.art.get_joint_velocities()[0]
@@ -476,10 +510,31 @@ class IsaacBridge:
         self._state_msg.data = out.tolist()
         self.state_pub.publish(self._state_msg)
 
+    # Max wall-clock drift before we re-sync instead of trying to catch up. Analog of MuJoCo's
+    # syncmisalign (mujoco_core_interactive.hpp:44). Sprinting to catch up a stall would spike
+    # the command-to-contact ratio and make the feet skid -- the very thing we are fixing.
+    PACE_RESYNC_S = 0.05
+
     def run(self) -> None:
+        # Wall-clock pace the physics, mirroring MuJoCo's sync loop
+        # (mujoco_core_interactive.hpp:1893). The controller_manager runs on wall-clock at
+        # 520 Hz (no use_sim_time, no /clock published), so the sim-clock MUST track real time
+        # or the gait desyncs and the feet slip. A free-running world.step() was the root cause
+        # of Isaac slipping more than MuJoCo, and of finer physics_dt making it worse (more
+        # compute per sim-second -> further behind real time). If the machine can't hold real
+        # time we fall behind and re-sync rather than sprint.
+        dt = ARGS.physics_dt
+        sim_elapsed = 0.0
+        wall_start = time.monotonic()
         try:
             while simulation_app.is_running():
                 self.world.step(render=not ARGS.headless)
+                sim_elapsed += dt
+                lead = sim_elapsed - (time.monotonic() - wall_start)
+                if lead > 0:
+                    time.sleep(lead)                      # ahead of real time -> wait
+                elif lead < -self.PACE_RESYNC_S:          # too far behind -> re-sync, don't sprint
+                    wall_start = time.monotonic() - sim_elapsed
         finally:
             rclpy.shutdown()
             simulation_app.close()

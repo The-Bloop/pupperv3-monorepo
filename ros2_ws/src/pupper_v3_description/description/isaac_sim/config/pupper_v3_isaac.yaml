@@ -31,9 +31,13 @@ asset:
   # Matches USD physxArticulation:enabledSelfCollisions = 0 and
   # convert_urdf_to_usd.py self_collision = False.
   enabled_self_collisions: false
-  # Match the committed USD.
+  # Position iters match the committed USD. Velocity iters raised 1 -> 8: PhysX resolves
+  # Coulomb (tangential) friction in the VELOCITY solver, and 1 iteration barely holds it,
+  # so the feet slip under lateral load regardless of the friction coefficient. MuJoCo has no
+  # such limit (implicit solver, converged every step), which is why Isaac slipped more than
+  # MuJoCo at both 0.65 and 1.0. 8 gives the tangential constraint room to converge.
   solver_position_iteration_count: 32
-  solver_velocity_iteration_count: 1
+  solver_velocity_iteration_count: 8
 
   # >>> LOAD-BEARING. Do not remove. <<<
   # The committed USD ships every joint with `drive:angular:physics:type = acceleration`.
