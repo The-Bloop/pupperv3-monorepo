@@ -1,3 +1,5 @@
+import datetime
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
 from launch.substitutions import (
@@ -102,6 +104,30 @@ def generate_launch_description():
         ),
     )
 
+    # --- T-Monitor: capture applied joint torque for MuJoCo-vs-Isaac comparison -----------
+    declare_t_monitor_arg = DeclareLaunchArgument(
+        name="t_monitor",
+        default_value="false",
+        choices=["true", "false"],
+        description=(
+            "Capture the torque actually applied to each joint (the actuator-model output) at "
+            "physics rate and publish it on /applied_torque. The correct per-sim emitter is "
+            "selected automatically: mujoco -> the C++ plugin, isaac -> isaac_bridge.py. See "
+            "t_monitor_output for where it is stored."
+        ),
+    )
+
+    declare_t_monitor_output_arg = DeclareLaunchArgument(
+        name="t_monitor_output",
+        default_value="both",
+        choices=["csv", "rosbag", "both"],
+        description=(
+            "T-Monitor sink(s), only used when t_monitor:=true. 'csv' -> torque_recorder writes "
+            "results/t_monitor/<backend>_<ts>.csv; 'rosbag' -> ros2 bag record /applied_torque; "
+            "'both' -> both. The topic is always published when t_monitor is on."
+        ),
+    )
+
     #
     # 2. Construct the path to the URDF file using IfElseSubstitution
 
@@ -191,11 +217,19 @@ def generate_launch_description():
         remappings=[("cmd_vel", "teleop_cmd_vel")],
     )
 
+    # T-Monitor enable flag, passed as env to the sim processes. MuJoCo's plugin reads
+    # getenv("T_MONITOR"); isaac_bridge.py reads it too (mirrors the CLI --t-monitor). "1"/"0"
+    # so a plain string compare works on both sides.
+    t_monitor_env = PythonExpression(
+        ["'1' if '", LaunchConfiguration("t_monitor"), "' == 'true' else '0'"]
+    )
+
     control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
         parameters=[node_parameters],
         output="both",
+        additional_env={"T_MONITOR": t_monitor_env},
     )
 
     robot_controller_spawner = Node(
@@ -390,17 +424,53 @@ def generate_launch_description():
     is_isaac_gui = PythonExpression(
         ["'", resolved_backend, "' == 'isaac' and '", LaunchConfiguration("headless"), "' != 'true'"]
     )
+    # T-Monitor is passed to the bridge via env (not a CLI flag): a conditional flag would need
+    # 4 bridge variants, and an empty '' arg would trip argparse -- the same trap the headless
+    # split already avoids. isaac_bridge.py reads T_MONITOR from the environment.
     isaac_bridge_headless = ExecuteProcess(
         cmd=["bash", bridge_script, "--headless", *bridge_tail],
         condition=IfCondition(is_isaac_headless),
         output="both",
         name="isaac_bridge",
+        additional_env={"T_MONITOR": t_monitor_env},
     )
     isaac_bridge_gui = ExecuteProcess(
         cmd=["bash", bridge_script, *bridge_tail],
         condition=IfCondition(is_isaac_gui),
         output="both",
         name="isaac_bridge",
+        additional_env={"T_MONITOR": t_monitor_env},
+    )
+
+    # T-Monitor sinks (only when t_monitor:=true). resolved_backend names the run; each launch
+    # records exactly one sim (they never run together), so the two sims are compared by running
+    # each in turn and diffing the two files/bags on sim_time.
+    t_monitor_on = PythonExpression(["'", LaunchConfiguration("t_monitor"), "' == 'true'"])
+    want_csv = PythonExpression(
+        [t_monitor_on, " and '", LaunchConfiguration("t_monitor_output"), "' in ('csv', 'both')"]
+    )
+    want_bag = PythonExpression(
+        [t_monitor_on, " and '", LaunchConfiguration("t_monitor_output"), "' in ('rosbag', 'both')"]
+    )
+    torque_recorder_node = Node(
+        package="neural_controller",
+        executable="torque_recorder.py",
+        name="torque_recorder",
+        output="both",
+        arguments=["--backend", resolved_backend, "--out-dir", "results/t_monitor"],
+        condition=IfCondition(want_csv),
+    )
+    launch_ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    torque_bag = ExecuteProcess(
+        cmd=[
+            "ros2", "bag", "record", "/applied_torque", "-o",
+            # single concatenated argument: results/t_monitor/<backend>_<ts>_bag
+            [TextSubstitution(text="results/t_monitor/"), resolved_backend,
+             TextSubstitution(text=f"_{launch_ts}_bag")],
+        ],
+        condition=IfCondition(want_bag),
+        output="both",
+        name="torque_bag",
     )
 
     # Hold the controller stack back only when isaac: it must not configure hardware before
@@ -439,6 +509,9 @@ def generate_launch_description():
         hailo_detection_node,
         # Person following
         person_following_node,
+        # T-Monitor sinks (self-gated on t_monitor / t_monitor_output)
+        torque_recorder_node,
+        torque_bag,
     ]
 
     #
@@ -453,6 +526,8 @@ def generate_launch_description():
             declare_headless_arg,
             declare_torque_mode_arg,
             declare_startup_delay_arg,
+            declare_t_monitor_arg,
+            declare_t_monitor_output_arg,
             # bridge starts immediately (isaac only); controller stack waits controller_delay.
             isaac_bridge_headless,
             isaac_bridge_gui,

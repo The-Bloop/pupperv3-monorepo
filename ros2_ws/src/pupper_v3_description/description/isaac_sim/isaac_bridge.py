@@ -36,6 +36,7 @@ ran. Log via carb, or write to a file.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import threading
 from pathlib import Path
@@ -72,10 +73,18 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--rendering-dt", type=float, default=1.0 / 60.0)
     p.add_argument("--publish-every", type=int, default=1,
                    help="Publish state every N physics steps. 1 = every step.")
+    p.add_argument("--t-monitor", action="store_true",
+                   help=("T-Monitor: also publish the applied joint torque on /applied_torque "
+                         "at physics rate (batched every --publish-every steps). Mirrors the "
+                         "MuJoCo plugin's /applied_torque so the two sims can be diffed."))
     return p.parse_args()
 
 
 ARGS = parse_args()
+
+# T-Monitor: enabled by --t-monitor OR the T_MONITOR=1 env (launch.py passes it as env, since a
+# conditional CLI flag would need extra bridge variants). Either turns on /applied_torque.
+T_MONITOR = ARGS.t_monitor or os.environ.get("T_MONITOR") == "1"
 
 # SimulationApp must exist before any other isaacsim/omni/pxr import.
 sys.argv.append("--/rtx/verifyDriverVersion/enabled=false")
@@ -97,7 +106,7 @@ from actuator_model import ActuatorParams, PIDActuatorModel  # noqa: E402
 
 import rclpy  # noqa: E402
 from rclpy.executors import MultiThreadedExecutor  # noqa: E402
-from std_msgs.msg import Float64MultiArray  # noqa: E402
+from std_msgs.msg import Float64MultiArray, MultiArrayDimension  # noqa: E402
 
 CFG = yaml.safe_load((HERE / "config" / "pupper_v3_isaac.yaml").read_text())
 
@@ -167,6 +176,10 @@ class IsaacBridge:
         self._lock = threading.Lock()
         self._latest: np.ndarray | None = None
         self._step_count = 0
+
+        # T-Monitor: sim clock + per-flush batch of applied-torque rows [sim_time, tau x12].
+        self._sim_time = 0.0
+        self._torque_batch: list[list[float]] = []
 
         self._init_ros()
         self.world.add_physics_callback("bridge", self._on_physics_step)
@@ -308,11 +321,19 @@ class IsaacBridge:
         )
         self.state_pub = self.node.create_publisher(Float64MultiArray, "/isaac/joint_state", 10)
         self._state_msg = Float64MultiArray()
+        # T-Monitor applied-torque publisher (only when --t-monitor). Same topic + batched
+        # layout as the MuJoCo plugin.
+        self.torque_pub = (
+            self.node.create_publisher(Float64MultiArray, "/applied_torque", 10)
+            if T_MONITOR else None
+        )
         self.executor = MultiThreadedExecutor()
         self.executor.add_node(self.node)
         self.spin_thread = threading.Thread(target=self.executor.spin, daemon=True)
         self.spin_thread.start()
-        carb.log_warn(f"[bridge] ROS up, torque_mode={ARGS.torque_mode}, rmw={rclpy.get_rmw_implementation_identifier()}")
+        carb.log_warn(
+            f"[bridge] ROS up, torque_mode={ARGS.torque_mode}, t_monitor={T_MONITOR}, "
+            f"rmw={rclpy.get_rmw_implementation_identifier()}")
 
     # ------------------------------------------------------------- runtime
 
@@ -326,6 +347,8 @@ class IsaacBridge:
             self._latest = arr
 
     def _on_physics_step(self, dt: float) -> None:
+        self._sim_time += dt  # T-Monitor sim clock, advances every physics step
+
         pos_isaac = self.art.get_joint_positions()[0]
         vel_isaac = self.art.get_joint_velocities()[0]
         pos = np.asarray(pos_isaac)[self.to_isaac]  # -> canonical
@@ -355,9 +378,33 @@ class IsaacBridge:
             tau_isaac[0, self.to_isaac] = tau
             self.art.set_joint_efforts(tau_isaac)
 
+            # T-Monitor: record what we just applied (canonical order), physics rate.
+            if self.torque_pub is not None:
+                self._torque_batch.append([self._sim_time, *np.asarray(tau, dtype=np.float64)])
+
         self._step_count += 1
         if self._step_count % ARGS.publish_every == 0:
             self._publish_state(pos, vel)
+            if self.torque_pub is not None and self._torque_batch:
+                self._publish_torque()
+
+    def _publish_torque(self) -> None:
+        """Flush the buffered applied-torque rows as one batched message. Layout mirrors the
+        MuJoCo plugin: N rows x (1 + N_JOINTS) cols, each [sim_time, tau x12] canonical."""
+        rows = self._torque_batch
+        n = len(rows)
+        cols = 1 + N_JOINTS
+        msg = Float64MultiArray()
+        msg.layout.dim = [
+            MultiArrayDimension(label="rows", size=n, stride=n * cols),
+            MultiArrayDimension(label="cols", size=cols, stride=cols),
+        ]
+        flat: list[float] = []
+        for r in rows:
+            flat.extend(r)
+        msg.data = flat
+        self.torque_pub.publish(msg)
+        self._torque_batch = []
 
     def _publish_state(self, pos: np.ndarray, vel: np.ndarray) -> None:
         """One atomic snapshot, mirroring mujoco's single locked read of `d`.

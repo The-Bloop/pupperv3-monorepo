@@ -1,7 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "fixed_size_queue.hpp"
@@ -13,9 +15,11 @@
 #include "rclcpp/clock.hpp"
 #include "rclcpp/duration.hpp"
 #include "rclcpp/macros.hpp"
+#include "rclcpp/rclcpp.hpp"
 #include "rclcpp/time.hpp"
 #include "rclcpp_lifecycle/node_interfaces/lifecycle_node_interface.hpp"
 #include "rclcpp_lifecycle/state.hpp"
+#include "std_msgs/msg/float64_multi_array.hpp"
 
 #define IMU_I2C_DEVICE_NUMBER 1
 
@@ -89,6 +93,17 @@ class MujocoHardwareInterface : public hardware_interface::SystemInterface {
   std::vector<double> hw_command_efforts_;
   std::vector<double> hw_command_kps_;
   std::vector<double> hw_command_kds_;
+
+  // T-Monitor: applied-torque publisher. Only wired up when capture is enabled (T_MONITOR
+  // env set by launch). A SystemInterface has no node of its own, so -- like the Isaac
+  // interface -- we own one and spin it on a thread. Publishes /applied_torque, one batched
+  // message per read() carrying every physics-step sample drained from the sim core.
+  bool torque_monitor_ = false;
+  rclcpp::Node::SharedPtr t_monitor_node_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr t_monitor_pub_;
+  rclcpp::executors::SingleThreadedExecutor::SharedPtr t_monitor_executor_;
+  std::thread t_monitor_spin_thread_;
+  std::atomic<bool> t_monitor_spinning_{false};
 };
 
 }  // namespace mujoco_hardware_interface

@@ -58,6 +58,11 @@ install(
   DIRECTORY launch/
   DESTINATION share/${PROJECT_NAME}/launch
 )
+# T-Monitor CSV recorder (python node, launched by launch.py when t_monitor:=true)
+install(
+  PROGRAMS scripts/torque_recorder.py
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

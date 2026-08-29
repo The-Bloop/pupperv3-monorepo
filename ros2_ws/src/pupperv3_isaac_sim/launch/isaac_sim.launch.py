@@ -52,6 +52,20 @@ def generate_launch_description():
         description="Run teleop_twist_joy for joystick driving.",
     )
 
+    declare_t_monitor = DeclareLaunchArgument(
+        name="t_monitor",
+        default_value="false",
+        choices=["true", "false"],
+        description="T-Monitor: capture applied joint torque on /applied_torque (isaac_bridge.py).",
+    )
+
+    declare_t_monitor_output = DeclareLaunchArgument(
+        name="t_monitor_output",
+        default_value="both",
+        choices=["csv", "rosbag", "both"],
+        description="T-Monitor sink when t_monitor:=true: csv | rosbag | both.",
+    )
+
     neural_controller = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution(
@@ -64,6 +78,8 @@ def generate_launch_description():
             "headless": LaunchConfiguration("headless"),
             "startup_delay": LaunchConfiguration("startup_delay"),
             "teleop": LaunchConfiguration("teleop"),
+            "t_monitor": LaunchConfiguration("t_monitor"),
+            "t_monitor_output": LaunchConfiguration("t_monitor_output"),
         }.items(),
     )
 
@@ -73,6 +89,8 @@ def generate_launch_description():
             declare_headless,
             declare_startup_delay,
             declare_teleop,
+            declare_t_monitor,
+            declare_t_monitor_output,
             neural_controller,
         ]
     )

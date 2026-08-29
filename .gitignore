@@ -18,3 +18,6 @@ untracked_bags
 
 # Cross-check output of isaac_sim/convert_urdf_to_usd.py; the committed USD is GUI-authored
 pupper_v3_isaac_generated/
+
+# T-Monitor captures (applied-torque CSVs + rosbags), regenerated per run — never committed.
+results/t_monitor/

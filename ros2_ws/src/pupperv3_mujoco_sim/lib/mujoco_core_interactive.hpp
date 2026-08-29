@@ -255,6 +255,21 @@ static ActuatorModelVector actuator_models_;
 static std::recursive_mutex latest_command_lock_;
 static ActuatorCommand latest_command_;
 
+// T-Monitor: physics-rate capture of the torque actually applied to the joints (d->ctrl,
+// the actuator-model output). Off unless the hardware interface turns it on. Its own mutex
+// (not mtx / latest_command_lock_) so update_ctrl_'s push never contends with the sim step.
+struct AppliedTorqueSample {
+  double sim_time;
+  std::vector<double> tau;  // length m->nu, canonical joint order
+};
+static bool torque_capture_enabled_ = false;
+static std::mutex torque_capture_mtx_;
+static std::vector<AppliedTorqueSample> torque_capture_buffer_;
+// read() drains this at ~520 Hz; at 10 kHz physics that is ~19 samples per drain. The cap is
+// pure back-pressure protection for the case where read() stalls -- we warn loudly and drop
+// the oldest rather than grow without bound (CLAUDE.md: no silent fallbacks).
+static constexpr size_t kTorqueCaptureMax = 10000;
+
 static bool is_robot_calibrated_ = false;
 
 static const unsigned int kOrientationVars = 4;
@@ -2086,6 +2101,39 @@ static float sim_time() {
   return d->time;
 }
 
+// --- T-Monitor applied-torque capture -------------------------------------------------
+// Enable/disable + reset. Called by the hardware interface's on_init.
+static void set_torque_capture(bool on) {
+  std::lock_guard<std::mutex> lock(torque_capture_mtx_);
+  torque_capture_enabled_ = on;
+  torque_capture_buffer_.clear();
+}
+
+// Snapshot the just-computed d->ctrl. Called at the end of update_ctrl_(), i.e. once per
+// physics step, with the sim already locked. Cheap no-op when disabled.
+static void capture_applied_torque_() {
+  if (!torque_capture_enabled_) return;
+  std::lock_guard<std::mutex> lock(torque_capture_mtx_);
+  if (torque_capture_buffer_.size() >= kTorqueCaptureMax) {
+    std::cerr << "[T-Monitor] applied-torque buffer hit " << kTorqueCaptureMax
+              << " samples -- read() is not draining; dropping oldest." << std::endl;
+    torque_capture_buffer_.erase(torque_capture_buffer_.begin());
+  }
+  AppliedTorqueSample s;
+  s.sim_time = d->time;
+  s.tau.assign(d->ctrl, d->ctrl + m->nu);
+  torque_capture_buffer_.push_back(std::move(s));
+}
+
+// Return + clear all buffered samples. Called by read().
+static std::vector<AppliedTorqueSample> drain_applied_torque() {
+  std::lock_guard<std::mutex> lock(torque_capture_mtx_);
+  std::vector<AppliedTorqueSample> out;
+  out.swap(torque_capture_buffer_);
+  return out;
+}
+// --------------------------------------------------------------------------------------
+
 static double actuator_velocity(int i) {
   std::unique_lock<std::recursive_mutex> lock(mtx);
   int start_idx = floating_base() ? kBaseVelocityVars : 0;
@@ -2153,6 +2201,8 @@ static void update_ctrl_() {
         latest_command_.position_target.at(i), actuator_velocity(i),
         latest_command_.velocity_target.at(i), latest_command_.feedforward_torque.at(i));
   }
+  // T-Monitor: record what we just applied, at physics rate (this runs before every mj_step).
+  capture_applied_torque_();
   // std::cout << "act pos: " << actuator_positions() << std::endl;
   // std::cout << "act vel: " << actuator_velocities() << std::endl;
   // std::cout << "ctrl: " << std::vector<double>(d->ctrl, d->ctrl + 12)

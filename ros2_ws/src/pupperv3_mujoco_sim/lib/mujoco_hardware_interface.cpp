@@ -8,6 +8,7 @@
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -24,6 +25,10 @@ namespace mujoco_hardware_interface {
 MujocoHardwareInterface::~MujocoHardwareInterface() {
   // Deactivate everything when ctrl-c is pressed
   on_deactivate(rclcpp_lifecycle::State());
+  // Tear down the T-Monitor node/thread if it was started.
+  t_monitor_spinning_ = false;
+  if (t_monitor_executor_) t_monitor_executor_->cancel();
+  if (t_monitor_spin_thread_.joinable()) t_monitor_spin_thread_.join();
 }
 
 hardware_interface::CallbackReturn MujocoHardwareInterface::on_init(
@@ -144,6 +149,28 @@ hardware_interface::CallbackReturn MujocoHardwareInterface::on_init(
 
   // Start GUI thread
   mujoco_interactive::run_gui_detached();
+
+  // T-Monitor: enable applied-torque capture when the launch set T_MONITOR. Explicit
+  // diagnostic toggle -- when unset, nothing below runs and the normal path is untouched.
+  const char *t_monitor_env = std::getenv("T_MONITOR");
+  torque_monitor_ = (t_monitor_env != nullptr && std::string(t_monitor_env) == "1");
+  if (torque_monitor_) {
+    mujoco_interactive::set_torque_capture(true);
+    if (!rclcpp::ok()) {
+      RCLCPP_FATAL(rclcpp::get_logger("MujocoHardwareInterface"),
+                   "T_MONITOR set but rclcpp not initialised");
+      return hardware_interface::CallbackReturn::ERROR;
+    }
+    t_monitor_node_ = std::make_shared<rclcpp::Node>("mujoco_torque_monitor");
+    t_monitor_pub_ = t_monitor_node_->create_publisher<std_msgs::msg::Float64MultiArray>(
+        "/applied_torque", 10);
+    t_monitor_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+    t_monitor_executor_->add_node(t_monitor_node_);
+    t_monitor_spinning_ = true;
+    t_monitor_spin_thread_ = std::thread([this]() { t_monitor_executor_->spin(); });
+    RCLCPP_INFO(rclcpp::get_logger("MujocoHardwareInterface"),
+                "T-Monitor on: publishing applied torque on /applied_torque");
+  }
 
   return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -319,6 +346,30 @@ hardware_interface::return_type MujocoHardwareInterface::read(const rclcpp::Time
   // Ground-truth body position and velocity in world-frame
   hw_state_mujoco_body_pos_ = mujoco_interactive::base_position();
   hw_state_mujoco_body_vel_ = mujoco_interactive::base_velocity();
+
+  // T-Monitor: drain every physics-step torque sample buffered since the last read() and
+  // ship them as one batched message. Layout mirrors the Isaac side: N rows x (1+nu) cols,
+  // each row [sim_time, tau_0..tau_(nu-1)] in canonical joint order.
+  if (torque_monitor_) {
+    auto samples = mujoco_interactive::drain_applied_torque();
+    if (!samples.empty()) {
+      const size_t cols = 1 + samples[0].tau.size();
+      std_msgs::msg::Float64MultiArray msg;
+      msg.layout.dim.resize(2);
+      msg.layout.dim[0].label = "rows";
+      msg.layout.dim[0].size = samples.size();
+      msg.layout.dim[0].stride = samples.size() * cols;
+      msg.layout.dim[1].label = "cols";
+      msg.layout.dim[1].size = cols;
+      msg.layout.dim[1].stride = cols;
+      msg.data.reserve(samples.size() * cols);
+      for (const auto &s : samples) {
+        msg.data.push_back(s.sim_time);
+        msg.data.insert(msg.data.end(), s.tau.begin(), s.tau.end());
+      }
+      t_monitor_pub_->publish(msg);
+    }
+  }
 
   return hardware_interface::return_type::OK;
 }

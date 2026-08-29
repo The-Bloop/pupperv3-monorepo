@@ -101,6 +101,45 @@ person-follow). Press `k`/space to zero the command and hand control back to aut
 input list lives in `config.yaml` under `cmd_vel_mux:`; the deadband gating for
 `/keyboard_cmd_vel` is in `cmd_vel_mux_node.cpp` (rebuild `cmd_vel_mux` if you change it).
 
+## T-Monitor — capture applied joint torque
+
+Records the torque **actually applied** to each joint (the actuator-model output — back-EMF
+and saturation already applied), for a MuJoCo-vs-Isaac comparison of the motor model itself,
+not just its effect on the body. Off by default; enable with `t_monitor:=true`.
+
+```bash
+# MuJoCo, both sinks (CSV + rosbag):
+distrobox enter pupper-jazzy -- bash ~/pupper/distrobox-setup/crun.sh \
+    ros2 launch neural_controller launch.py sim:=True t_monitor:=true t_monitor_output:=both
+
+# Isaac, CSV only:
+distrobox enter pupper-jazzy -- bash ~/pupper/distrobox-setup/crun.sh \
+    ros2 launch pupper_isaac_sim isaac_sim.launch.py t_monitor:=true t_monitor_output:=csv
+```
+
+Args (both entry points):
+- `t_monitor` — `true` | `false` (default `false`). Master enable. The correct emitter is
+  auto-selected by backend: **mujoco** → the C++ plugin, **isaac** → `isaac_bridge.py`.
+- `t_monitor_output` — `csv` | `rosbag` | `both` (default `both`). `csv` → `torque_recorder`
+  writes `results/t_monitor/<backend>_<ts>.csv`; `rosbag` → `ros2 bag record /applied_torque`
+  into `results/t_monitor/<backend>_<ts>_bag`; `both` → both. The `/applied_torque` topic is
+  always published when `t_monitor` is on, regardless of sink.
+
+**Topic** `/applied_torque` (`std_msgs/Float64MultiArray`), batched physics-rate samples:
+`layout.dim = [rows=N, cols=13]`, `data` = N rows of `[sim_time, tau_0 … tau_11]` in canonical
+joint order. Batching keeps MuJoCo off a 10 kHz message rate (one message per 520 Hz `read()`,
+N≈19 rows); Isaac flushes per `--publish-every` (default N=1 at 1 kHz).
+
+**One run = one sim = one file.** The sims never run together (see "One sim at a time"), so a
+run records a single backend. Compare by running each in turn and **diffing the two CSVs on
+`sim_time`** (column 0, each sim's own clock). Do **not** row-align: the physics rates differ
+(MuJoCo 10 kHz `timestep 1e-4` vs Isaac 1 kHz `--physics-dt 1e-3`, same 520 Hz command rate) —
+resample on `sim_time` first. This is the same fidelity gap called out for `physics_dt`.
+
+Captures under `results/t_monitor/` are git-ignored. Wiring: launch arg → `T_MONITOR` env on
+the sim process (mujoco plugin `getenv`, bridge `os.environ`); emitters in
+`mujoco_hardware_interface.cpp` / `isaac_bridge.py`; recorder `neural_controller/scripts/torque_recorder.py`.
+
 ## Gotchas
 
 - **Host shell is Humble.** Always enter the container.
