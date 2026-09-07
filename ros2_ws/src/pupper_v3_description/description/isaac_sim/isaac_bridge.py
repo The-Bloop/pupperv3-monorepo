@@ -69,16 +69,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     p.add_argument("--headless", action="store_true")
-    p.add_argument("--physics-dt", type=float, default=0.0005,
-                   help=("Physics step, 2 kHz. Finer is now safe and preferred for fidelity: with "
-                         "use_sim_time the controller is paced by the bridge's /clock, so control "
-                         "and physics stay locked no matter how far below realtime the sim runs. "
-                         "Before use_sim_time, 0.0005 WORSENED slip (finer dt -> lower realtime "
-                         "factor -> the wall-clock controller outran the physics); that coupling is "
-                         "gone. Finer dt just means slower slow-motion (~0.22x wall here) and "
-                         "contact closer to MuJoCo's 1e-4/10 kHz. Do NOT coarsen to chase realtime "
-                         "-- 0.004 (250 Hz) is too coarse and breaks the get-up. Report the dt gap "
-                         "with any MuJoCo comparison."))
+    p.add_argument("--physics-dt", type=float, default=0.0004,
+                   help=("Physics step, 2.5 kHz. Safe with use_sim_time: the controller is paced by "
+                         "the bridge's /clock, so control and physics stay locked no matter how far "
+                         "below realtime the sim runs. Before use_sim_time, finer dt WORSENED slip "
+                         "(lower realtime factor -> the wall-clock controller outran the physics); "
+                         "that coupling is gone. Finer buys fidelity toward MuJoCo's 1e-4/10 kHz at "
+                         "a proportional slow-motion cost (headless throughput caps ~450 steps/s "
+                         "here regardless of dt). Do NOT coarsen to chase realtime -- 0.004 (250 Hz) "
+                         "breaks the get-up. Report the dt gap with any MuJoCo comparison."))
     p.add_argument("--rendering-dt", type=float, default=1.0 / 60.0)
     p.add_argument("--publish-every", type=int, default=1,
                    help="Publish state every N physics steps. 1 = every step.")
