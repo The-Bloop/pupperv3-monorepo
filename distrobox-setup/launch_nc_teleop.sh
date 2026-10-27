@@ -21,7 +21,7 @@ _strip_humble() { printf '%s' "$1" | tr ':' '\n' | sed '/\/opt\/ros\/humble/d' |
 LD_LIBRARY_PATH="$(_strip_humble "${LD_LIBRARY_PATH:-}")"; export LD_LIBRARY_PATH
 
 source /opt/ros/jazzy/setup.bash
-source /home/the_bloop/pupper/pupperv3-monorepo/ros2_ws/install_jazzy/setup.bash
+source /home/the_bloop/pupper/pupperv3-monorepo/ros2_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 # --- logging -------------------------------------------------------------

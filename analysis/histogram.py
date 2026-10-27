@@ -35,7 +35,7 @@ def main():
 
     bag_paths = [Path(args.bagpath1), Path(args.bagpath2)]
     typestore = get_typestore(
-        Stores.ROS2_HUMBLE
+        Stores.ROS2_JAZZY
     )  # Adjust if you're using a different ROS version
 
     data_list = []

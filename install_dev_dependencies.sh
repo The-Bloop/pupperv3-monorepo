@@ -5,20 +5,24 @@ set -o pipefail
 
 sudo apt update
 
-# Install ROS2
-sudo apt install -y software-properties-common
-sudo add-apt-repository -y universe
-sudo apt update && sudo apt install curl -y
-export ROS_APT_SOURCE_VERSION=$(curl -s https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest | grep -F "tag_name" | awk -F\" '{print $4}')
-curl -L -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo $VERSION_CODENAME)_all.deb" # If using Ubuntu derivates use $UBUNTU_CODENAME
-sudo dpkg -i /tmp/ros2-apt-source.deb
-sudo apt update && sudo apt install -y ros-dev-tools
-sudo apt install -y ros-jazzy-desktop
-echo 'source /opt/ros/jazzy/setup.bash' >> $HOME/.bashrc
+# Install ROS 2 Jazzy (skip if already installed)
+if [ -f /opt/ros/jazzy/setup.bash ]; then
+    echo "ROS 2 Jazzy already installed at /opt/ros/jazzy - skipping base install."
+else
+    sudo apt install -y software-properties-common
+    sudo add-apt-repository -y universe
+    sudo apt update && sudo apt install curl -y
+    export ROS_APT_SOURCE_VERSION=$(curl -s https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest | grep -F "tag_name" | awk -F\" '{print $4}')
+    curl -L -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo $VERSION_CODENAME)_all.deb" # If using Ubuntu derivates use $UBUNTU_CODENAME
+    sudo dpkg -i /tmp/ros2-apt-source.deb
+    sudo apt update && sudo apt install -y ros-dev-tools
+    sudo apt install -y ros-jazzy-desktop
+    echo 'source /opt/ros/jazzy/setup.bash' >> $HOME/.bashrc
+fi
 source /opt/ros/jazzy/setup.bash
 
 # install pip
-sudo apt install -y python3-pip libglfw3-dev
+sudo apt install -y python3-pip libglfw3-dev portaudio19-dev
 
 pip install wandb glfw openai[realtime] pyaudio pydub numpy sounddevice --break-system-packages
 
@@ -36,7 +40,7 @@ sudo apt-get install -y ros-jazzy-ros2-control ros-jazzy-ros2-controllers ros-ja
 sudo apt-get install -y ros-jazzy-vision-msgs ros-jazzy-camera-calibration ros-jazzy-image-transport-plugins ros-jazzy-theora-image-transport ros-jazzy-compressed-depth-image-transport ros-jazzy-compressed-image-transport
 sudo apt-get install -y ros-jazzy-foxglove-bridge
 sudo apt-get install -y ros-jazzy-joy-linux
-sudo apt-get install ros-jazzy-camera-ros
+sudo apt-get install -y ros-jazzy-camera-ros
 
 # Upgrade packages near the end since it takes a long time
 sudo apt upgrade -y
