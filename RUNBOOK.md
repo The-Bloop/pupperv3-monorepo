@@ -3,16 +3,29 @@
 How to run `neural_controller` against either simulator, and how they are wired.
 
 > **Environment.** ROS 2 for this robot is **Jazzy inside the `pupper-jazzy` distrobox**.
-> The host shell is Humble and cannot run jazzy or Isaac. Every command below runs inside the
-> container via `distrobox enter pupper-jazzy -- …`.
+> This laptop's host shell is Humble and cannot run Jazzy or Isaac. Enter the container
+> once and run everything from that shell:
+>
+> ```bash
+> distrobox enter pupper-jazzy
+> ```
+>
+> `~/.bashrc` sources `distrobox-setup/jazzy_env.sh` for interactive shells whose
+> `CONTAINER_ID` is `pupper-jazzy`, so that shell already has Jazzy, the workspace and
+> CycloneDDS, and child processes inherit it. Non-interactive shells never read
+> `~/.bashrc`, so `distrobox enter pupper-jazzy -- bash some_script.sh` gets **no ROS
+> env** and the scripts below will not find `ros2`. The scripts no longer prepare the
+> environment themselves -- there is one definition, in `jazzy_env.sh`.
 >
 > **Helper scripts** are committed at `distrobox-setup/` in this repo and mirrored to
 > `~/pupper/distrobox-setup/`, which is what the commands below actually execute. The two are
 > plain copies, not symlinks — **edit the repo copy and copy it across**, or they drift. They
 > carry machine-specific absolute paths. Key ones:
 >
-> - `crun.sh` — scrub Humble from the env, source jazzy + the workspace, set CycloneDDS, then
->   exec the given ros2 command. Use it for every `ros2 …` call.
+> - `jazzy_env.sh` — the environment itself: scrub Humble, source Jazzy + the workspace,
+>   set CycloneDDS. Sourced by `~/.bashrc`, never run directly.
+> - `crun.sh` — now just `exec "$@"`. Kept because `lab_5_fall_2025`'s eval backend calls it
+>   by path; a plain `ros2 …` works identically from a prepared shell.
 > - `launch_nc_mujoco.sh`, `launch_nc_isaac.sh` — launch the controller stack for one backend.
 > - `teardown_controller.sh` — kill the controller stack (and its orphan
 >   `robot_state_publisher`) while leaving the Isaac bridge alive.
@@ -25,10 +38,9 @@ both at once collides on node names and topics. Tear one down before starting th
 ## MuJoCo (in-process libmujoco, headless)
 
 ```bash
-distrobox enter pupper-jazzy -- bash ~/pupper/distrobox-setup/launch_nc_mujoco.sh
+bash ~/pupper/distrobox-setup/launch_nc_mujoco.sh
 # in another shell, once controller_manager is up:
-distrobox enter pupper-jazzy -- bash ~/pupper/distrobox-setup/crun.sh \
-    ros2 control set_controller_state neural_controller active
+ros2 control set_controller_state neural_controller active
 ```
 
 No display required — MuJoCo 2.3.1 initialises headless. Selects
@@ -40,8 +52,7 @@ Starts the Isaac bridge (Isaac's own python 3.11 + bundled jazzy rclpy) and the 
 stack together:
 
 ```bash
-distrobox enter pupper-jazzy -- bash ~/pupper/distrobox-setup/crun.sh \
-    ros2 launch pupper_isaac_sim isaac_sim.launch.py
+ros2 launch pupper_isaac_sim isaac_sim.launch.py
 #   optional args:  torque_mode:=model|passthrough   headless:=true|false
 ```
 
@@ -52,14 +63,12 @@ activate the controller as in the MuJoCo section.
 
 ```bash
 # 1. bridge first — boots Isaac (~25 s to "ROS up"), repairs the cuda stub automatically
-distrobox enter pupper-jazzy -- bash \
-  ~/pupper/pupperv3-monorepo/ros2_ws/src/pupper_v3_description/description/isaac_sim/run_isaac_bridge.sh \
+bash ~/pupper/pupperv3-monorepo/ros2_ws/src/pupper_v3_description/description/isaac_sim/run_isaac_bridge.sh \
   --headless --torque-mode model
 # 2. controller stack
-distrobox enter pupper-jazzy -- bash ~/pupper/distrobox-setup/launch_nc_isaac.sh
+bash ~/pupper/distrobox-setup/launch_nc_isaac.sh
 # 3. activate
-distrobox enter pupper-jazzy -- bash ~/pupper/distrobox-setup/crun.sh \
-    ros2 control set_controller_state neural_controller active
+ros2 control set_controller_state neural_controller active
 ```
 
 `torque_mode` on the bridge **must** match `torque_source` in
@@ -68,7 +77,6 @@ distrobox enter pupper-jazzy -- bash ~/pupper/distrobox-setup/crun.sh \
 ## Verify
 
 ```bash
-# prefix each with: distrobox enter pupper-jazzy -- bash ~/pupper/distrobox-setup/crun.sh
 ros2 control list_controllers            # controller states
 ros2 control list_hardware_interfaces    # isaac plugin OK == 60 command + 40 state
 python3 ~/pupper/distrobox-setup/snapshot_standing.py <label>   # 12-joint pose (+ isaac body_z)
@@ -93,7 +101,7 @@ standalone script, not a node in `launch.py`.
 
 ```bash
 # with a sim/robot + controller already up and active:
-distrobox enter pupper-jazzy -- bash ~/pupper/distrobox-setup/keyboard_teleop.sh
+bash ~/pupper/distrobox-setup/keyboard_teleop.sh
 ```
 
 Keys: `i`/`,` forward/back, `j`/`l` turn, `k` or space stop, `q`/`z` speed up/down.
@@ -112,12 +120,10 @@ not just its effect on the body. Off by default; enable with `t_monitor:=true`.
 
 ```bash
 # MuJoCo, both sinks (CSV + rosbag):
-distrobox enter pupper-jazzy -- bash ~/pupper/distrobox-setup/crun.sh \
-    ros2 launch neural_controller launch.py sim:=True t_monitor:=true t_monitor_output:=both
+ros2 launch neural_controller launch.py sim:=True t_monitor:=true t_monitor_output:=both
 
 # Isaac, CSV only:
-distrobox enter pupper-jazzy -- bash ~/pupper/distrobox-setup/crun.sh \
-    ros2 launch pupper_isaac_sim isaac_sim.launch.py t_monitor:=true t_monitor_output:=csv
+ros2 launch pupper_isaac_sim isaac_sim.launch.py t_monitor:=true t_monitor_output:=csv
 ```
 
 Args (both entry points):
@@ -146,8 +152,8 @@ the sim process (mujoco plugin `getenv`, bridge `os.environ`); emitters in
 
 ## Gotchas
 
-- **Host shell is Humble.** Always enter the container.
-- **`crun.sh` for every ros2 call** — it scrubs Humble, sources jazzy, sets CycloneDDS.
+- **Host shell is Humble.** Always enter the container, and enter it *interactively* —
+  `distrobox enter pupper-jazzy -- cmd` skips `~/.bashrc`, and so skips the whole ROS env.
 - **Isaac cuda stub** — distrobox leaves a 0-byte `libcuda.so` that segfaults Isaac;
   `run_isaac_bridge.sh` runs `fix_isaac_cuda.sh` first, every launch.
 - **Don't `pkill -f` with the process name typed into your interactive shell** — the pattern
