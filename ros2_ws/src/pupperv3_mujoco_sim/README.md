@@ -8,7 +8,7 @@
 sudo apt install -y libglfw3-dev
 cd ${YOUR_WORKSPACE_FOLDER}/src
 git clone https://github.com/Nate711/pupperv3_mujoco_sim.git
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 cd ${YOUR_WORKSPACE_FOLDER}
 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=1
 source /install/local_setup.bash

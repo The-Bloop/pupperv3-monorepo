@@ -3,11 +3,6 @@ ros2_ws/build/
 ros2_ws/log/
 ros2_ws/install/
 
-# Jazzy build from the pupper-jazzy distrobox. Separate bases because the container
-# shares this directory with the host, whose Humble build owns build/ and install/.
-ros2_ws/build_jazzy/
-ros2_ws/install_jazzy/
-
 *.DS_Store
 *.pem
 *.pyc
