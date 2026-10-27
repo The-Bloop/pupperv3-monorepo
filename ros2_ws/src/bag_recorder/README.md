@@ -65,7 +65,7 @@ recording_2024-01-15_14-30-25.mcap
 
 ## Requirements
 
-- ROS2 (Humble or later)
+- ROS 2 Jazzy
 - `sensor_msgs` package
 - `ros2 bag` command available
 - Joystick publishing to `/joy` topic

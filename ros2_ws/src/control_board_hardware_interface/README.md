@@ -4,7 +4,7 @@ This repository provides a ros2_control hardware interface for the Pupper v3 con
 
 ## Prerequisites
 - [Pupper v3 control board](https://oshwlab.com/gabrael_3548/pupper-v3-control-power-boards)
-- Raspberry Pi 4 running Ubuntu 22.04 and ROS2 Humble [(tested with this image)](https://github.com/ros-realtime/ros-realtime-rpi4-image/releases/tag/22.04.1_v5.15.39-rt42-raspi_ros2_humble)
+- Raspberry Pi 5 running Ubuntu 24.04 and ROS 2 Jazzy ([flash the custom image](https://pupper-v3-documentation.readthedocs.io/en/latest/guide/software_installation.html))
 - Recommended: configure ros2_control for realtime operation as described [here](https://control.ros.org/master/doc/ros2_control/controller_manager/doc/userdoc.html#determinism)
 - Create a workspace `/home/pi/ros2_ws`
 

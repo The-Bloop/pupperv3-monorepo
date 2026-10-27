@@ -7,6 +7,5 @@ _strip_humble() { printf '%s' "$1" | tr ':' '\n' | sed '/\/opt\/ros\/humble/d' |
 LD_LIBRARY_PATH="$(_strip_humble "${LD_LIBRARY_PATH:-}")"; export LD_LIBRARY_PATH
 source /opt/ros/jazzy/setup.bash
 cd /home/the_bloop/pupper/pupperv3-monorepo/ros2_ws || exit 1
-colcon --log-base log_jazzy build --symlink-install \
-    --build-base build_jazzy --install-base install_jazzy \
+colcon build --symlink-install \
     --packages-select pupper_v3_description pupper_isaac_sim
