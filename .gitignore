@@ -21,3 +21,13 @@ pupper_v3_isaac_generated/
 
 # T-Monitor captures (applied-torque CSVs + rosbags), regenerated per run — never committed.
 results/t_monitor/
+
+# Neural controller policy weights: deployed by lab_5_fall_2025/rebuild_neural_controller.py
+# and fetched by download_latest_policy.py, so they are build output, not source. 5 MB each,
+# and the W&B downloads accumulate (222 MB at last count).
+ros2_ws/src/neural_controller/launch/policy_*.json
+ros2_ws/src/neural_controller/launch/test_policy.json
+ros2_ws/src/neural_controller/launch/parkour_policy.json
+
+# rebuild_neural_controller.py writes these beside each file it replaces
+*.backup
