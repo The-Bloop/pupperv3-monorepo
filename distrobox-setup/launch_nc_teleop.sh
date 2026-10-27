@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Launch a sim WITH joystick teleop enabled, and capture per-process logs.
-# Runs INSIDE pupper-jazzy. Host Bash tool must invoke via:
-#   distrobox enter pupper-jazzy -- bash /home/the_bloop/pupper/distrobox-setup/launch_nc_teleop.sh [backend] [headless]
+#   bash ~/pupper/distrobox-setup/launch_nc_teleop.sh [backend] [headless]
 #     backend  = mujoco (default) | isaac | real
 #     headless = false (default, isaac only) | true    -- ignored for mujoco/real
 #
@@ -9,20 +8,12 @@
 #   itself when backend:=isaac (holding the controller stack back by startup_delay), and the
 #   sim is in-process for mujoco/real. `headless` is isaac-only (GUI by default so you can
 #   watch while driving); it is ignored for mujoco/real.
-# No `set -u`: jazzy's setup.bash references AMENT_TRACE_SETUP_FILES unbound.
 
 BACKEND="${1:-mujoco}"
 HEADLESS="${2:-false}"
 
-# scrub any humble leakage (non-interactive shells skip the .bashrc guard)
-unset ROS_DISTRO ROS_VERSION ROS_PYTHON_VERSION ROS_LOCALHOST_ONLY \
-      AMENT_PREFIX_PATH COLCON_PREFIX_PATH CMAKE_PREFIX_PATH PYTHONPATH 2>/dev/null
-_strip_humble() { printf '%s' "$1" | tr ':' '\n' | sed '/\/opt\/ros\/humble/d' | paste -sd: -; }
-LD_LIBRARY_PATH="$(_strip_humble "${LD_LIBRARY_PATH:-}")"; export LD_LIBRARY_PATH
-
-source /opt/ros/jazzy/setup.bash
-source /home/the_bloop/pupper/pupperv3-monorepo/ros2_ws/install/setup.bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+# Environment comes from distrobox-setup/jazzy_env.sh, which ~/.bashrc sources for
+# interactive shells inside pupper-jazzy. Run this from such a shell; children inherit it.
 
 # --- logging -------------------------------------------------------------
 # Force every node's rcl log into ONE run-specific dir so each process gets
