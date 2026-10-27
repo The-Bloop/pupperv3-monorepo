@@ -6,8 +6,11 @@ How to run `neural_controller` against either simulator, and how they are wired.
 > The host shell is Humble and cannot run jazzy or Isaac. Every command below runs inside the
 > container via `distrobox enter pupper-jazzy -- …`.
 >
-> **Helper scripts** live in `~/pupper/distrobox-setup/` (durable, intentionally *not* in the
-> repo — they carry machine-specific paths and container-repair logic). Key ones:
+> **Helper scripts** are committed at `distrobox-setup/` in this repo and mirrored to
+> `~/pupper/distrobox-setup/`, which is what the commands below actually execute. The two are
+> plain copies, not symlinks — **edit the repo copy and copy it across**, or they drift. They
+> carry machine-specific absolute paths. Key ones:
+>
 > - `crun.sh` — scrub Humble from the env, source jazzy + the workspace, set CycloneDDS, then
 >   exec the given ros2 command. Use it for every `ros2 …` call.
 > - `launch_nc_mujoco.sh`, `launch_nc_isaac.sh` — launch the controller stack for one backend.
@@ -118,6 +121,7 @@ distrobox enter pupper-jazzy -- bash ~/pupper/distrobox-setup/crun.sh \
 ```
 
 Args (both entry points):
+
 - `t_monitor` — `true` | `false` (default `false`). Master enable. The correct emitter is
   auto-selected by backend: **mujoco** → the C++ plugin, **isaac** → `isaac_bridge.py`.
 - `t_monitor_output` — `csv` | `rosbag` | `both` (default `both`). `csv` → `torque_recorder`
